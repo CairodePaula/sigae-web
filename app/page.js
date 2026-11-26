@@ -2,10 +2,15 @@
 import { useEffect, useState, useCallback } from 'react';
 
 const RISCOS = { 1: 'Emergência', 2: 'Muito urgente', 3: 'Urgente', 4: 'Pouco urgente', 5: 'Não urgente' };
-const fmtHora = (ms) => new Date(ms).toLocaleTimeString('pt-BR');
+const VAZIO = {
+  fila: [], cronologica: [], arvore: null, altura: 0,
+  hash: { capacidade: 0, tamanho: 0, colisoes: 0, baldes: [] },
+  proximoMedico: null, pacientes: [], medicos: [],
+};
+const fmtHora = (ms) => (ms ? new Date(ms).toLocaleTimeString('pt-BR') : '—');
 
 function Risco({ n }) {
-  return <span className={`risco r${n}`} title={RISCOS[n]}>{n} · {RISCOS[n]}</span>;
+  return <span className={`risco r${n}`}>{n} · {RISCOS[n]}</span>;
 }
 
 function Badge({ situacao }) {
@@ -13,8 +18,26 @@ function Badge({ situacao }) {
   return <span className={cls}>{situacao === 'Disponivel' ? 'Disponível' : situacao}</span>;
 }
 
+function No({ n }) {
+  return (
+    <div className="no-wrap">
+      <div className={`no ${n.cor}`}>
+        <b>#{n.id}</b>
+        <span>{n.nome}</span>
+        <small>risco {n.risco} · {fmtHora(n.chegada)}</small>
+      </div>
+      {(n.esq || n.dir) && (
+        <div className="filhos">
+          <div>{n.esq && <No n={n.esq} />}</div>
+          <div>{n.dir && <No n={n.dir} />}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
-  const [dados, setDados] = useState({ fila: [], pacientes: [], medicos: [] });
+  const [dados, setDados] = useState(VAZIO);
   const [msg, setMsg] = useState('');
   const [nome, setNome] = useState('');
   const [risco, setRisco] = useState(3);
@@ -48,10 +71,11 @@ export default function Home() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  const aguardando = dados.pacientes.filter((p) => p.situacao === 'Aguardando').length;
-  const disponiveis = dados.medicos.filter((m) => m.situacao === 'Disponivel').length;
+  const proximo = dados.fila[0];
   const emAtendimento = dados.pacientes.filter((p) => p.situacao === 'Em atendimento');
   const encerrados = dados.pacientes.filter((p) => p.situacao === 'Concluido' || p.situacao === 'Cancelado');
+  const disponiveis = dados.medicos.filter((m) => m.situacao === 'Disponivel').length;
+  const h = dados.hash;
 
   return (
     <>
@@ -61,7 +85,6 @@ export default function Home() {
           <small>Sistema de atendimento de emergência · dados fictícios</small>
         </div>
         <div className="acoes">
-          <button onClick={() => enviar('/api/chamar')}>Chamar próximo</button>
           <button className="sec" onClick={carregar}>Atualizar</button>
         </div>
       </header>
@@ -69,9 +92,24 @@ export default function Home() {
       <main className="container">
         {msg && <div className="msg">{msg}</div>}
 
+        <section className="hero">
+          <div>
+            <small>Próximo a ser chamado · Min-Heap de prioridade</small>
+            <h2>{proximo ? `#${proximo.id} ${proximo.nome}` : 'Ninguém aguardando'}</h2>
+            {proximo && <Risco n={proximo.risco} />}
+            {dados.proximoMedico && (
+              <p className="sub">
+                Médico previsto: #{dados.proximoMedico.id} {dados.proximoMedico.nome}
+                {' '}({dados.proximoMedico.concluidos} concluídos)
+              </p>
+            )}
+          </div>
+          <button className="chamar" onClick={() => enviar('/api/chamar')}>Chamar próximo</button>
+        </section>
+
         <section className="card">
           <div className="stats">
-            <div className="stat"><b>{aguardando}</b><span>Aguardando</span></div>
+            <div className="stat"><b>{dados.fila.length}</b><span>Aguardando</span></div>
             <div className="stat"><b>{emAtendimento.length}</b><span>Em atendimento</span></div>
             <div className="stat"><b>{disponiveis}</b><span>Médicos disponíveis</span></div>
             <div className="stat"><b>{dados.medicos.length}</b><span>Médicos cadastrados</span></div>
@@ -101,13 +139,15 @@ export default function Home() {
         </div>
 
         <section className="card">
-          <h2>Fila de espera (ordem cronológica · Rubro-Negra)</h2>
+          <h2>Fila de espera · ordem de chamada (Min-Heap)</h2>
+          <p className="sub">Próximo = menor (risco, chegada, ID). Prioridade clínica prevalece sobre a ordem de chegada.</p>
           {dados.fila.length === 0 ? <div className="vazio">Nenhum paciente aguardando.</div> : (
             <table>
-              <thead><tr><th>ID</th><th>Nome</th><th>Risco</th><th>Chegada</th><th>Ações</th></tr></thead>
+              <thead><tr><th>Ordem</th><th>ID</th><th>Nome</th><th>Risco</th><th>Chegada</th><th>Ações</th></tr></thead>
               <tbody>
-                {dados.fila.map((p) => (
+                {dados.fila.map((p, i) => (
                   <tr key={p.id}>
+                    <td>{i + 1}º</td>
                     <td>#{p.id}</td>
                     <td>{p.nome}</td>
                     <td><Risco n={p.risco} /></td>
@@ -126,13 +166,46 @@ export default function Home() {
           )}
         </section>
 
+        <section className="card">
+          <div className="cardhead">
+            <h2>Árvore Rubro-Negra · índice de chegada</h2>
+            <span className="legenda">
+              <i className="sw v" /> vermelho <i className="sw p" /> preto · altura {dados.altura}
+            </span>
+          </div>
+          <p className="sub">
+            Chave (chegada, ID). Inserções em ordem de chegada: {dados.cronologica.map((p) => `#${p.id}`).join(' → ') || '—'}
+          </p>
+          <div className="arvore-scroll">
+            {dados.arvore ? <No n={dados.arvore} /> : <div className="vazio">Árvore vazia.</div>}
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>Tabela hash · pacientes por ID</h2>
+          <p className="sub">
+            Capacidade {h.capacidade} · {h.tamanho} itens · colisões {h.colisoes} · redimensiona acima de 75% de carga
+          </p>
+          <div className="baldes">
+            {h.baldes.map((b) => (
+              <div key={b.i} className={`balde ${b.chaves.length > 1 ? 'colide' : ''}`}>
+                <small>posição {b.i}</small>
+                {b.chaves.length === 0 ? <em>vazio</em> : b.chaves.map((id) => <span key={id}>#{id}</span>)}
+              </div>
+            ))}
+          </div>
+        </section>
+
         <div className="grid2">
           <section className="card">
             <h2>Em atendimento</h2>
             {emAtendimento.length === 0 && <div className="vazio">Nenhum atendimento em andamento.</div>}
             {emAtendimento.map((p) => (
               <div key={p.id} className="atend-item">
-                <span>#{p.id} <strong>{p.nome}</strong> → médico #{p.medico_id}</span>
+                <span>
+                  #{p.id} <strong>{p.nome}</strong> → médico #{p.medico_id}
+                  <br /><small className="sub">início {fmtHora(p.inicio)}</small>
+                </span>
                 <span className="acoes">
                   <button className="ok" onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'concluir' })}>Concluir</button>
                   <button className="sec" onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'cancelar' })}>Cancelar</button>
