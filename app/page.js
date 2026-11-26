@@ -1,7 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
-
-const SITUACOES_PAC = ['Aguardando', 'Em atendimento', 'Concluido', 'Cancelado'];
+import { useEffect, useState, useCallback } from 'react';
 
 export default function Home() {
   const [dados, setDados] = useState({ fila: [], pacientes: [], medicos: [] });
@@ -11,24 +9,37 @@ export default function Home() {
   const [nomeMed, setNomeMed] = useState('');
   const [registro, setRegistro] = useState('');
 
-  async function carregar() {
-    const r = await fetch('/api/painel', { cache: 'no-store' });
-    setDados(await r.json());
-  }
+  const carregar = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/painel?t=${Date.now()}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`painel respondeu ${r.status}`);
+      setDados(await r.json());
+    } catch (e) {
+      setMsg('Erro ao carregar painel: ' + e.message);
+    }
+  }, []);
 
-  async function enviar(url, corpo) {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(corpo || {}),
-    });
-    const j = await r.json();
-    setMsg(j.erro || j.msg || 'OK');
-    carregar();
-  }
+  const enviar = async (url, corpo) => {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo || {}),
+      });
+      const j = await r.json();
+      setMsg(j.erro || j.msg || 'OK');
+    } catch (e) {
+      setMsg('Erro de rede: ' + e.message);
+    }
+    await carregar();
+  };
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => { carregar(); }, [carregar]);
 
+  const aguardando = dados.pacientes.filter((p) => p.situacao === 'Aguardando').length;
+  const disponiveis = dados.medicos.filter((m) => m.situacao === 'Disponivel').length;
+  const emAtendimento = dados.pacientes.filter((p) => p.situacao === 'Em atendimento');
+  const encerrados = dados.pacientes.filter((p) => p.situacao === 'Concluido' || p.situacao === 'Cancelado');
   const card = { background: '#fff', borderRadius: 8, padding: 16, marginBottom: 16 };
 
   return (
@@ -38,9 +49,9 @@ export default function Home() {
 
       <section style={card}>
         <h2>Painel</h2>
-        <p>Aguardando: {dados.pacientes.filter((p) => p.situacao === 'Aguardando').length} · 
-           Médicos disponíveis: {dados.medicos.filter((m) => m.situacao === 'Disponivel').length}</p>
+        <p>Aguardando: {aguardando} · Médicos disponíveis: {disponiveis}</p>
         <button onClick={() => enviar('/api/chamar')}>Chamar próximo</button>
+        <button onClick={carregar} style={{ marginLeft: 8 }}>Atualizar</button>
       </section>
 
       <section style={card}>
@@ -64,7 +75,7 @@ export default function Home() {
       </section>
 
       <section style={card}>
-        <h2>Fila de espera (ordem cronológica, Rubro-Negra)</h2>
+        <h2>Fila de espera (ordem por prioridade)</h2>
         <table cellPadding={6} style={{ width: '100%' }}>
           <thead><tr><th align="left">ID</th><th align="left">Nome</th><th>Risco</th><th align="left">Chegada</th><th /></tr></thead>
           <tbody>
@@ -87,7 +98,7 @@ export default function Home() {
 
       <section style={card}>
         <h2>Em atendimento</h2>
-        {dados.pacientes.filter((p) => p.situacao === 'Em atendimento').map((p) => (
+        {emAtendimento.map((p) => (
           <div key={p.id} style={{ marginBottom: 8 }}>
             #{p.id} {p.nome} → médico {p.medico_id}{' '}
             <button onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'concluir' })}>Concluir</button>{' '}
@@ -114,8 +125,7 @@ export default function Home() {
       <section style={card}>
         <h2>Histórico</h2>
         <ul>
-          {dados.pacientes.filter((p) => p.situacao === 'Concluido' || p.situacao === 'Cancelado')
-            .map((p) => <li key={p.id}>#{p.id} {p.nome} — {p.situacao}</li>)}
+          {encerrados.map((p) => <li key={p.id}>#{p.id} {p.nome} — {p.situacao}</li>)}
         </ul>
       </section>
     </main>
