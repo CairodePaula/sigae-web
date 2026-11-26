@@ -35,3 +35,31 @@ td { padding: 10px 8px; border-bottom: 1px solid var(--line); }
 .msg { background: #fff; border-left: 4px solid var(--brand); padding: 10px 14px; border-radius: 8px; font-size: 14px; }
 .atend-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); gap: 10px; }
 .hist li { padding: 4px 0; font-size: 14px; color: var(--muted); }
+.hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; background: #fff; border: 1px solid var(--line); border-left: 6px solid var(--brand); border-radius: 12px; padding: 18px 22px; }
+.hero small { color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: .05em; }
+.hero h2 { margin: 4px 0 8px; font-size: 22px; }
+.chamar { padding: 16px 28px; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.sub { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.cardhead { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.cardhead h2 { margin: 0; }
+.legenda { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.sw.v { background: #c23b3b; }
+.sw.p { background: #1d2433; }
+button.ok { background: var(--ok); }
+.arvore-scroll { overflow-x: auto; padding: 14px 0 6px; }
+.no-wrap { display: flex; flex-direction: column; align-items: center; }
+.no { display: flex; flex-direction: column; align-items: center; min-width: 120px; padding: 8px 10px; border-radius: 10px; color: #fff; font-size: 13px; text-align: center; }
+.no.vermelho { background: #c23b3b; }
+.no.preto { background: #1d2433; }
+.no small { opacity: .85; font-size: 11px; }
+.filhos { display: flex; gap: 18px; margin-top: 22px; }
+.filhos > div { position: relative; padding-top: 22px; }
+.filhos > div:not(:empty)::before { content: ''; position: absolute; top: 0; left: 50%; height: 22px; border-left: 2px solid #c9ced9; }
+.filhos > div:empty { width: 120px; }
+.baldes { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.balde { border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 13px; background: var(--bg); }
+.balde small { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.balde span { display: inline-block; margin-right: 4px; font-weight: 600; }
+.balde em { color: var(--muted); font-size: 12px; }
+.balde.colide { border-color: var(--warn); background: #fff7e6; }
