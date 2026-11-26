@@ -4,10 +4,13 @@ import { sql } from '../../../lib/db';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const raw = await sql`SELECT * FROM medicos ORDER BY id`;
-  return NextResponse.json({
-    linhas: raw.length,
-    tipo: Array.isArray(raw) ? 'array' : typeof raw,
-    primeiro: raw[0] ?? null,
-  });
+  const [info] = await sql`
+    SELECT
+      current_database() AS banco,
+      current_schema() AS schema_atual,
+      (SELECT count(*) FROM public.medicos)::int AS medicos_public,
+      (SELECT string_agg(table_schema || '.' || table_name, ', ')
+         FROM information_schema.tables WHERE table_name = 'medicos') AS tabelas_medicos
+  `;
+  return NextResponse.json(info);
 }
