@@ -116,6 +116,22 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="card">
+          <h2>Indicadores</h2>
+          <div className="stats">
+            {['Aguardando', 'Em atendimento', 'Concluido', 'Cancelado'].map((s) => (
+              <div className="stat" key={s}>
+                <b>{dados.pacientes.filter((p) => p.situacao === s).length}</b>
+                <span>Pacientes: {s}</span>
+              </div>
+            ))}
+          </div>
+          <p className="sub">
+            Atendimentos concluídos por médico:{' '}
+            {dados.medicos.map((m) => `#${m.id} ${m.nome} (${m.concluidos})`).join(' · ') || '—'}
+          </p>
+        </section>
+
         <div className="grid2">
           <section className="card">
             <h2>Cadastrar paciente</h2>
