@@ -1,0 +1,43 @@
+SIGAE Web — evidência de testes automatizados
+Comando: npm test (node --test, reporter spec)
+Data: 27/11/2026 17:30  |  Node v22.19.0
+
+✔ RB: inserção mantém as propriedades rubro-negras e a ordem (6.3998ms)
+✔ RB: busca encontra chaves existentes e não encontra ausentes (0.5168ms)
+✔ RB: remoção de metade das chaves mantém as propriedades e a ordem (6.1466ms)
+✔ RB: remover todas as chaves deixa a árvore vazia; remover ausente devolve false (0.3912ms)
+✔ RB: chave repetida atualiza o valor sem duplicar o nó (0.2451ms)
+✔ RB: inserção sequencial mantém altura logarítmica e registra rotações (2.8998ms)
+✔ RB: três chegadas em ordem geram rotação à esquerda (caso 3) e o evento é registrado (0.8817ms)
+✔ RB: validar detecta árvore corrompida (1.2792ms)
+✔ Heap: extrai sempre o menor elemento (5.8661ms)
+✔ Heap: removerPorId usa o índice de posições e mantém o heap válido (1.7072ms)
+✔ Heap: alterar prioridade sobe o paciente até a raiz sem duplicar (0.8315ms)
+✔ Heap: ID repetido é rejeitado (0.4849ms)
+✔ Heap: ordemDeSaida não altera o heap original (0.4126ms)
+✔ Hash: inserir, obter, atualizar e remover (0.309ms)
+✔ Hash: h(id) = id % 11 — IDs 1 e 12 colidem e ambos são encontrados (0.7424ms)
+✔ Hash: redimensiona de 11 para 23 ao passar de 75% de carga e preserva os dados (1.7307ms)
+✔ Hash: chave não inteira é rejeitada (0.2221ms)
+✔ Seção 7: três médicos A, B e C com zero atendimentos recebem as primeiras chamadas de forma equilibrada (7.7523ms)
+✔ Seção 7: após conclusões, o próximo médico escolhido é o que tem menos atendimentos concluídos (2.8285ms)
+✔ Seção 7: empate de contadores desempata por quem está há mais tempo sem receber paciente, depois menor ID (2.9596ms)
+✔ Seção 7: médico ocupado não é escolhido e, sem médico disponível, o paciente permanece na fila (2.4977ms)
+✔ Seção 7: a ordem de chamada respeita o heap de pacientes (risco, chegada, ID) (1.1248ms)
+✔ Seção 7: a distribuição de médicos nunca se sobrepõe à prioridade clínica (0.4014ms)
+✔ Seção 7: reclassificar reorganiza o heap sem criar duplicações (0.9088ms)
+✔ Seção 7: reclassificar paciente que não está aguardando é rejeitado (0.6959ms)
+✔ Seção 7: cancelamento antes da conclusão não aumenta o contador e libera o médico (1.13ms)
+✔ Seção 7: cancelar cadastro na fila remove o paciente das três estruturas (1.2762ms)
+✔ Seção 7: concluir, cancelar e reclassificar em sequência mantêm os índices consistentes (33.1257ms)
+✔ Seção 7: colisões na hash de espera são tratadas e os dois pacientes são localizados (0.3622ms)
+✔ Seção 7: a hash de espera redimensiona com o crescimento da fila (0.7095ms)
+✔ Carregar do banco reconstrói os índices e detecta registro órfão (0.4859ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 178.5395
