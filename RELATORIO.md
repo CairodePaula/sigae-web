@@ -104,7 +104,7 @@ O enunciado permite mecanismos auxiliares desde que justificados. Nenhum deles s
   - de atendimento: o médico é liberado **sem** somar concluído.
 - **Sem médico disponível:** a chamada não altera nada. O paciente permanece na fila, sem perda nem duplicação.
 - **Reclassificação:** só para pacientes aguardando.
-- **Validação dos índices** (botão *Validar índices* e após cada operação):
+- **Validação dos índices** (automática, após cada operação, com indicador na lateral):
   - mesmo conjunto de IDs aguardando na hash, na Rubro-Negra e no heap;
   - nenhum paciente em atendimento ou encerrado nos índices de espera;
   - todo médico ocupado com exatamente um paciente e todo disponível com nenhum;

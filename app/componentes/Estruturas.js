@@ -41,7 +41,6 @@ export default function Estruturas({ dados, enviar, abrirPaciente }) {
             </p>
           </div>
           <div className="acoes">
-            <button className="btn primario" onClick={() => enviar('/api/validar')}>Validar índices</button>
             <button className="btn" onClick={() => enviar('/api/cenario', { tipo: 'normal' },
               'Restaurar o cenário apaga todos os pacientes e médicos atuais e cria 3 médicos (A, B e C) e 5 pacientes. Continuar?')}>Restaurar cenário</button>
             <button className="btn" onClick={() => enviar('/api/cenario', { tipo: 'colisoes' },

@@ -67,7 +67,7 @@ São 31 testes. Cobrem as três estruturas e os cenários obrigatórios da seç�
 5. **Triagem → Reclassificar** um paciente para risco 1: ele passa a ser a raiz do heap.
 6. **Cancelar** um aguardando e um em atendimento: o contador do médico não sobe.
 7. **Estruturas → Cenário de colisões:** IDs 1000, 1011, 1022, 1033 e 1044 no mesmo bucket. Consulte-os em **Pacientes**. Cadastre mais 4 pacientes para ver a hash redimensionar de 11 para 23.
-8. **Validar índices** a qualquer momento.
+8. A consistência dos índices é conferida automaticamente após cada operação (indicador "Índices consistentes" na lateral).
 
 ## Deploy
 
