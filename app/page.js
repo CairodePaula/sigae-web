@@ -1,262 +1,211 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Painel from './componentes/Painel';
+import Pacientes from './componentes/Pacientes';
+import Triagem from './componentes/Triagem';
+import Medicos from './componentes/Medicos';
+import Atendimentos from './componentes/Atendimentos';
+import Historico from './componentes/Historico';
+import Estruturas from './componentes/Estruturas';
+import { Icone, RISCOS, Risco, Situacao, fmtDataHora, fmtHora } from './componentes/comum';
 
-const RISCOS = { 1: 'Emergência', 2: 'Muito urgente', 3: 'Urgente', 4: 'Pouco urgente', 5: 'Não urgente' };
+const HASH_VAZIA = { capacidade: 0, tamanho: 0, carga: 0, colisoes: 0, colisoesAtuais: 0, redimensionamentos: 0, baldes: [] };
 const VAZIO = {
-  fila: [], cronologica: [], arvore: null, altura: 0,
-  hash: { capacidade: 0, tamanho: 0, colisoes: 0, baldes: [] },
-  proximoMedico: null, pacientes: [], medicos: [],
+  fila: [], heapPacientes: [], cronologica: [], arvore: null, altura: 0,
+  hash: HASH_VAZIA, hashMedicos: HASH_VAZIA, heapMedicos: [], proximoMedico: null,
+  atendimentos: [], historico: [], chegadas: [], pacientes: [], medicos: [], validacao: null, proximoId: null,
 };
-const fmtHora = (ms) => (ms ? new Date(ms).toLocaleTimeString('pt-BR') : '—');
 
-function Risco({ n }) {
-  return <span className={`risco r${n}`}>{n} · {RISCOS[n]}</span>;
-}
+const TELAS = {
+  painel: { titulo: 'Painel geral', sub: 'Quem é o próximo, quem está em atendimento e como está a unidade agora.', Componente: Painel },
+  pacientes: { titulo: 'Pacientes', sub: 'Registro de entrada, consulta por número de atendimento e lista completa.', Componente: Pacientes },
+  triagem: { titulo: 'Triagem e fila', sub: 'Ordem de chamada pela prioridade clínica. Reclassifique ou cancele aqui.', Componente: Triagem },
+  medicos: { titulo: 'Médicos', sub: 'Cadastro, situação e atendimentos concluídos de cada médico clínico.', Componente: Medicos },
+  atendimentos: { titulo: 'Atendimentos', sub: 'Pacientes em consulta e o médico responsável por cada um.', Componente: Atendimentos },
+  historico: { titulo: 'Histórico', sub: 'Atendimentos por médico, pacientes por situação e chegadas em ordem.', Componente: Historico },
+  estruturas: { titulo: 'Estruturas de dados', sub: 'Rubro-Negra, heaps e tabelas hash que sustentam cada operação.', Componente: Estruturas },
+};
+const NAV = ['painel', 'pacientes', 'triagem', 'medicos', 'atendimentos', 'historico'];
 
-function Badge({ situacao }) {
-  const cls = situacao === 'Disponivel' ? 'badge b-disp' : situacao === 'Em atendimento' ? 'badge b-atend' : 'badge';
-  return <span className={cls}>{situacao === 'Disponivel' ? 'Disponível' : situacao}</span>;
-}
-
-function No({ n }) {
+function Registro({ registro, fechar }) {
+  if (!registro) return null;
+  const n = registro.eventos?.length || 0;
   return (
-    <div className="no-wrap">
-      <div className={`no ${n.cor}`}>
-        <b>#{n.id}</b>
-        <span>{n.nome}</span>
-        <small>risco {n.risco} · {fmtHora(n.chegada)}</small>
+    <section className={`registro ${registro.erro ? 'falha' : ''}`} aria-live="polite">
+      <div className="cabeca">
+        <b>{registro.erro ? 'Operação não realizada' : 'Última operação'}<span className="hora">{fmtHora(registro.quando)}</span></b>
+        <button className="fechar" onClick={fechar} aria-label="Fechar registro">Fechar</button>
       </div>
-      {(n.esq || n.dir) && (
-        <div className="filhos">
-          <div>{n.esq && <No n={n.esq} />}</div>
-          <div>{n.dir && <No n={n.dir} />}</div>
-        </div>
+      <p className="msg">{registro.erro || registro.msg}</p>
+      {registro.erros?.length > 0 && <p className="erro-txt">{registro.erros.join('; ')}</p>}
+      {n > 0 && (
+        <details>
+          <summary>Ver o que mudou nas estruturas ({n} {n === 1 ? 'evento' : 'eventos'})</summary>
+          <ol className="eventos">{registro.eventos.map((e, i) => <li key={i}>{e}</li>)}</ol>
+        </details>
       )}
+      {registro.validacao && (
+        <p className={`validado ${registro.validacao.ok ? 'ok-txt' : 'erro-txt'}`}>
+          {registro.validacao.ok ? 'Índices conferidos após a operação.' : registro.validacao.erros.join('; ')}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DetalhePaciente({ paciente, fechar }) {
+  useEffect(() => {
+    if (!paciente) return undefined;
+    const esc = (e) => e.key === 'Escape' && fechar();
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [paciente, fechar]);
+  if (!paciente) return null;
+  return (
+    <div className="modal-fundo" onClick={fechar}>
+      <div className={`modal r${paciente.risco}`} role="dialog" aria-modal="true" aria-label={paciente.nome} onClick={(e) => e.stopPropagation()}>
+        <div className="topo-modal">
+          <div>
+            <h2>{paciente.nome}</h2>
+            <p>Atendimento #{paciente.id}</p>
+          </div>
+          <button className="fechar" onClick={fechar}>Fechar</button>
+        </div>
+        <dl className="detalhe">
+          <dt>Risco</dt><dd><Risco n={paciente.risco} /></dd>
+          <dt>Situação</dt><dd><Situacao s={paciente.situacao} /></dd>
+          <dt>Chegada</dt><dd>{fmtDataHora(paciente.chegada)}</dd>
+          <dt>Médico</dt><dd>{paciente.medicoNome || '—'}</dd>
+          <dt>Início</dt><dd>{fmtDataHora(paciente.inicio)}</dd>
+          <dt>Fim</dt><dd>{fmtDataHora(paciente.fim)}</dd>
+        </dl>
+      </div>
     </div>
   );
 }
 
 export default function Home() {
   const [dados, setDados] = useState(VAZIO);
-  const [msg, setMsg] = useState('');
-  const [nome, setNome] = useState('');
-  const [risco, setRisco] = useState(3);
-  const [nomeMed, setNomeMed] = useState('');
-  const [registro, setRegistro] = useState('');
+  const [tela, setTela] = useState('painel');
+  const [registro, setRegistro] = useState(null);
+  const [detalheId, setDetalheId] = useState(null);
+  const [processando, setProcessando] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
       const r = await fetch(`/api/painel?t=${Date.now()}`, { cache: 'no-store' });
-      if (!r.ok) throw new Error(`painel respondeu ${r.status}`);
-      setDados(await r.json());
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || `o servidor respondeu ${r.status}`);
+      setDados({ ...VAZIO, ...j });
     } catch (e) {
-      setMsg('Erro ao carregar painel: ' + e.message);
+      setRegistro({ erro: 'Não foi possível carregar os dados: ' + e.message, quando: Date.now() });
     }
   }, []);
 
-  const enviar = async (url, corpo) => {
+  // Envia uma ação; devolve true se deu certo
+  const enviar = async (url, corpo, confirmacao) => {
+    if (confirmacao && !window.confirm(confirmacao)) return false;
+    setProcessando(true);
+    let ok = false;
     try {
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(corpo || {}),
-      });
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo || {}) });
       const j = await r.json();
-      setMsg(j.erro || j.msg || 'OK');
+      ok = !j.erro;
+      setRegistro({ ...j, quando: Date.now() });
     } catch (e) {
-      setMsg('Erro de rede: ' + e.message);
+      setRegistro({ erro: 'Sem conexão com o servidor: ' + e.message, quando: Date.now() });
     }
     await carregar();
+    setProcessando(false);
+    return ok;
+  };
+
+  const consultar = async (url) => {
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      return await r.json();
+    } catch (e) {
+      return { erro: 'Sem conexão com o servidor: ' + e.message };
+    }
   };
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  // Cada tela tem endereço próprio (#triagem, #estruturas...), útil para abrir direto na demonstração
+  useEffect(() => {
+    const lerHash = () => {
+      const id = window.location.hash.slice(1);
+      if (TELAS[id]) setTela(id);
+    };
+    lerHash();
+    window.addEventListener('hashchange', lerHash);
+    return () => window.removeEventListener('hashchange', lerHash);
+  }, []);
+
+  const irPara = (id) => {
+    setTela(id);
+    window.history.replaceState(null, '', `#${id}`);
+  };
+
+  const { titulo, sub, Componente } = TELAS[tela];
+  const detalhe = detalheId ? dados.pacientes.find((p) => p.id === detalheId) : null;
+  const contagem = { triagem: dados.fila.length, atendimentos: dados.atendimentos.length };
+  const valido = dados.validacao?.ok;
   const proximo = dados.fila[0];
-  const emAtendimento = dados.pacientes.filter((p) => p.situacao === 'Em atendimento');
-  const encerrados = dados.pacientes.filter((p) => p.situacao === 'Concluido' || p.situacao === 'Cancelado');
-  const disponiveis = dados.medicos.filter((m) => m.situacao === 'Disponivel').length;
-  const h = dados.hash;
+
+  const BotaoNav = ({ id }) => (
+    <button className={tela === id ? 'ativa' : ''} onClick={() => irPara(id)} aria-current={tela === id ? 'page' : undefined}
+      title={TELAS[id].titulo} aria-label={TELAS[id].titulo}>
+      <Icone nome={id} /><span className="rotulo-nav">{TELAS[id].titulo}</span>
+      {contagem[id] ? <span className="contador">{contagem[id]}</span> : null}
+    </button>
+  );
 
   return (
-    <>
-      <header className="topo">
-        <div>
-          <h1>SIGAE Web</h1>
-          <small>Sistema de atendimento de emergência · dados fictícios</small>
+    <div className="app">
+      <aside className="lateral">
+        <div className="marca">
+          <strong>SIGAE</strong>
+          <span>Simulador de pronto atendimento com dados fictícios</span>
         </div>
-        <div className="acoes">
-          <button className="sec" onClick={carregar}>Atualizar</button>
+        <nav className="nav" aria-label="Telas">
+          {NAV.map((id) => <BotaoNav key={id} id={id} />)}
+          <div className="divisor" />
+          <BotaoNav id="estruturas" />
+        </nav>
+        <div className="lateral-rodape">
+          <div className="estado" title={valido ? 'Índices consistentes' : 'Índices com inconsistência'}>
+            <span className={`ponto ${valido === undefined ? '' : valido ? 'ok' : 'erro'}`} />
+            <span className="texto-estado">{valido === undefined ? 'Carregando…' : valido ? 'Índices consistentes' : 'Índices com inconsistência'}</span>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="container">
-        {msg && <div className="msg">{msg}</div>}
-
-        <section className="hero">
+      <div className="principal">
+        <header className="topo">
           <div>
-            <small>Próximo a ser chamado · Min-Heap de prioridade</small>
-            <h2>{proximo ? `#${proximo.id} ${proximo.nome}` : 'Ninguém aguardando'}</h2>
-            {proximo && <Risco n={proximo.risco} />}
-            {dados.proximoMedico && (
-              <p className="sub">
-                Médico previsto: #{dados.proximoMedico.id} {dados.proximoMedico.nome}
-                {' '}({dados.proximoMedico.concluidos} concluídos)
-              </p>
+            <h1>{titulo}</h1>
+            <p>{sub}</p>
+          </div>
+          <div className="acoes-topo">
+            {processando && <span className="processando">Processando…</span>}
+            <button className="btn" onClick={carregar}>Atualizar</button>
+            {tela !== 'painel' && (
+              <button className="btn primario" onClick={() => enviar('/api/chamar')} disabled={!proximo}
+                title={proximo ? `Próximo: #${proximo.id} ${proximo.nome} (${RISCOS[proximo.risco]})` : 'Ninguém aguardando'}>
+                Chamar próximo
+              </button>
             )}
           </div>
-          <button className="chamar" onClick={() => enviar('/api/chamar')}>Chamar próximo</button>
-        </section>
+        </header>
 
-        <section className="card">
-          <div className="stats">
-            <div className="stat"><b>{dados.fila.length}</b><span>Aguardando</span></div>
-            <div className="stat"><b>{emAtendimento.length}</b><span>Em atendimento</span></div>
-            <div className="stat"><b>{disponiveis}</b><span>Médicos disponíveis</span></div>
-            <div className="stat"><b>{dados.medicos.length}</b><span>Médicos cadastrados</span></div>
-          </div>
-        </section>
+        <main className="conteudo">
+          <Registro registro={registro} fechar={() => setRegistro(null)} />
+          <Componente dados={dados} enviar={enviar} consultar={consultar} abrirPaciente={setDetalheId} />
+        </main>
+      </div>
 
-        <section className="card">
-          <h2>Indicadores</h2>
-          <div className="stats">
-            {['Aguardando', 'Em atendimento', 'Concluido', 'Cancelado'].map((s) => (
-              <div className="stat" key={s}>
-                <b>{dados.pacientes.filter((p) => p.situacao === s).length}</b>
-                <span>Pacientes: {s}</span>
-              </div>
-            ))}
-          </div>
-          <p className="sub">
-            Atendimentos concluídos por médico:{' '}
-            {dados.medicos.map((m) => `#${m.id} ${m.nome} (${m.concluidos})`).join(' · ') || '—'}
-          </p>
-        </section>
-
-        <div className="grid2">
-          <section className="card">
-            <h2>Cadastrar paciente</h2>
-            <div className="form">
-              <input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-              <select value={risco} onChange={(e) => setRisco(Number(e.target.value))}>
-                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} - {RISCOS[n]}</option>)}
-              </select>
-              <button onClick={() => { enviar('/api/pacientes', { nome, risco }); setNome(''); }}>Cadastrar</button>
-            </div>
-          </section>
-
-          <section className="card">
-            <h2>Cadastrar médico</h2>
-            <div className="form">
-              <input placeholder="Nome" value={nomeMed} onChange={(e) => setNomeMed(e.target.value)} />
-              <input placeholder="Registro fictício" value={registro} onChange={(e) => setRegistro(e.target.value)} />
-              <button onClick={() => { enviar('/api/medicos', { nome: nomeMed, registro }); setNomeMed(''); setRegistro(''); }}>Cadastrar</button>
-            </div>
-          </section>
-        </div>
-
-        <section className="card">
-          <h2>Fila de espera · ordem de chamada (Min-Heap)</h2>
-          <p className="sub">Próximo = menor (risco, chegada, ID). Prioridade clínica prevalece sobre a ordem de chegada.</p>
-          {dados.fila.length === 0 ? <div className="vazio">Nenhum paciente aguardando.</div> : (
-            <table>
-              <thead><tr><th>Ordem</th><th>ID</th><th>Nome</th><th>Risco</th><th>Chegada</th><th>Ações</th></tr></thead>
-              <tbody>
-                {dados.fila.map((p, i) => (
-                  <tr key={p.id}>
-                    <td>{i + 1}º</td>
-                    <td>#{p.id}</td>
-                    <td>{p.nome}</td>
-                    <td><Risco n={p.risco} /></td>
-                    <td>{fmtHora(p.chegada)}</td>
-                    <td className="acoes">
-                      <button className="sec" onClick={() => {
-                        const r = window.prompt('Novo risco (1 a 5)', p.risco);
-                        if (r) enviar(`/api/pacientes/${p.id}`, { acao: 'reclassificar', risco: r });
-                      }}>Reclassificar</button>
-                      <button className="sec" onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'cancelar' })}>Cancelar</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        <section className="card">
-          <div className="cardhead">
-            <h2>Árvore Rubro-Negra · índice de chegada</h2>
-            <span className="legenda">
-              <i className="sw v" /> vermelho <i className="sw p" /> preto · altura {dados.altura}
-            </span>
-          </div>
-          <p className="sub">
-            Chave (chegada, ID). Inserções em ordem de chegada: {dados.cronologica.map((p) => `#${p.id}`).join(' → ') || '—'}
-          </p>
-          <div className="arvore-scroll">
-            {dados.arvore ? <No n={dados.arvore} /> : <div className="vazio">Árvore vazia.</div>}
-          </div>
-        </section>
-
-        <section className="card">
-          <h2>Tabela hash · pacientes por ID</h2>
-          <p className="sub">
-            Capacidade {h.capacidade} · {h.tamanho} itens · colisões {h.colisoes} · redimensiona acima de 75% de carga
-          </p>
-          <div className="baldes">
-            {h.baldes.map((b) => (
-              <div key={b.i} className={`balde ${b.chaves.length > 1 ? 'colide' : ''}`}>
-                <small>posição {b.i}</small>
-                {b.chaves.length === 0 ? <em>vazio</em> : b.chaves.map((id) => <span key={id}>#{id}</span>)}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="grid2">
-          <section className="card">
-            <h2>Em atendimento</h2>
-            {emAtendimento.length === 0 && <div className="vazio">Nenhum atendimento em andamento.</div>}
-            {emAtendimento.map((p) => (
-              <div key={p.id} className="atend-item">
-                <span>
-                  #{p.id} <strong>{p.nome}</strong> → médico #{p.medico_id}
-                  <br /><small className="sub">início {fmtHora(p.inicio)}</small>
-                </span>
-                <span className="acoes">
-                  <button className="ok" onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'concluir' })}>Concluir</button>
-                  <button className="sec" onClick={() => enviar(`/api/pacientes/${p.id}`, { acao: 'cancelar' })}>Cancelar</button>
-                </span>
-              </div>
-            ))}
-          </section>
-
-          <section className="card hist">
-            <h2>Histórico</h2>
-            {encerrados.length === 0 && <div className="vazio">Sem atendimentos encerrados.</div>}
-            <ul>
-              {encerrados.map((p) => <li key={p.id}>#{p.id} {p.nome} — {p.situacao}</li>)}
-            </ul>
-          </section>
-        </div>
-
-        <section className="card">
-          <h2>Médicos</h2>
-          <table>
-            <thead><tr><th>ID</th><th>Nome</th><th>Registro</th><th>Situação</th><th>Concluídos</th></tr></thead>
-            <tbody>
-              {dados.medicos.map((m) => (
-                <tr key={m.id}>
-                  <td>#{m.id}</td>
-                  <td>{m.nome}</td>
-                  <td>{m.registro}</td>
-                  <td><Badge situacao={m.situacao} /></td>
-                  <td>{m.concluidos}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      </main>
-    </>
+      <DetalhePaciente paciente={detalhe} fechar={() => setDetalheId(null)} />
+    </div>
   );
 }
