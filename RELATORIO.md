@@ -18,46 +18,137 @@
 
 ## 1. Objetivo
 
-O SIGAE Web é um simulador acadêmico de atendimento de emergência. O sistema registra pacientes, classifica o risco, organiza a fila de espera, distribui atendimentos entre médicos clínicos e mantém o histórico. Todos os dados são fictícios.
+O SIGAE Web é um simulador acadêmico de pronto atendimento. Ele registra pacientes, classifica o risco, organiza a fila de espera, distribui os atendimentos entre médicos clínicos e mantém histórico e indicadores. Todos os dados são fictícios.
+
+Acesso: https://sigae-web.vercel.app
 
 ## 2. Arquitetura
 
-A aplicação usa Next.js 14 (App Router), com processamento no servidor, banco PostgreSQL no Neon e deploy na Vercel. A cada requisição, as funções carregam pacientes e médicos do banco e reconstroem as estruturas de dados em memória. Essa escolha é necessária porque funções serverless não mantêm estado entre requisições. Como consequência, o índice de chegada não persiste entre chamadas, o que é discutido na seção de limitações.
+Next.js 14 (App Router), com processamento no servidor, banco PostgreSQL no Neon e deploy na Vercel.
+
+```
+app/page.js + app/componentes/   interface (7 telas)
+app/api/*                        rotas HTTP
+lib/servico.js                   carrega o banco, executa a operação, grava os efeitos
+lib/sistema.js                   núcleo: regras de atendimento sobre as estruturas (sem banco)
+lib/estruturas/                  Rubro-Negra, Min-Heap e Tabela Hash (implementadas pela equipe)
+lib/regras.js                    critérios de prioridade e desempate
+```
+
+**Fluxo de cada ação.** (1) As linhas de pacientes e médicos são lidas em uma única transação somente leitura. (2) `SistemaSIGAE.carregar` reconstrói os índices. (3) A operação é executada nas estruturas: inserções, remoções, extrações do mínimo, alteração de prioridade. (4) `validar()` confere a consistência. (5) Os efeitos são gravados no banco.
+
+A gravação é atômica. Na chamada, paciente e médico são alterados por uma única instrução SQL, que trava as duas linhas e só atualiza se ambos ainda estiverem elegíveis (`Aguardando` / `Disponivel`): ou os dois mudam, ou nenhum. Se o estado mudou nesse meio-tempo, por exemplo com dois cliques simultâneos, nada é gravado e o usuário é avisado.
+
+**Por que reconstruir a cada requisição.** Funções serverless não guardam memória entre chamadas. O banco é a fonte única dos dados e as estruturas são os índices em memória sobre ele. Cada resposta traz o registro de eventos das estruturas (rotações, recolorações, colisões, redimensionamentos, trocas no heap), exibido na interface. Assim, todas as operações das estruturas podem ser demonstradas durante o uso do sistema.
 
 ## 3. Estruturas de dados
 
-A **Árvore Rubro-Negra** (`lib/estruturas/arvoreRubroNegra.js`) foi implementada do zero, com inserção, remoção, busca, percurso em ordem, recoloração e rotações. Funciona como índice de chegada, com chave composta (horário de chegada, ID). Na interface, cada nó é exibido com sua cor, e a altura da árvore é informada.
+### 3.1 Árvore Rubro-Negra — índice de chegada (`lib/estruturas/arvoreRubroNegra.js`)
 
-Dois **Min-Heaps** (`lib/estruturas/heapBinario.js`) são usados. O primeiro organiza os pacientes pela chave (risco, chegada, ID) e define a ordem de chamada. O segundo organiza os médicos pela chave (atendimentos concluídos, último atendimento, ID) e define quem é o próximo médico previsto.
+- Chave composta `(horário de chegada, ID)`. O percurso em ordem reproduz a sequência de chegadas.
+- Segue o modelo da aula: nó sentinela NIL negro compartilhado e atributo `pai` em cada nó.
+- **Inserção:** o nó entra rubro e é corrigido pelos casos 1 (tio rubro: recoloração), 2 (zig-zag: rotação) e 3 (linha reta: rotação no avô e troca de cores).
+- **Remoção:** transplante e sucessor, com correção de duplo negro (4 casos espelhados).
+- **Busca, percurso em ordem, altura e `validar()`.** `validar()` confere: raiz e NIL negros, nenhum rubro com filho rubro, mesma altura negra em todos os caminhos, ponteiros `pai` corretos, ordem de ABB e tamanho.
+- **No sistema:** o paciente entra na árvore no cadastro e sai quando é chamado ou cancelado. A tela Estruturas desenha a árvore com as cores e a altura.
 
-A **tabela hash** (`lib/estruturas/tabelaHash.js`) indexa os pacientes por ID. Usa função de dispersão multiplicativa, trata colisões por encadeamento e redimensiona o vetor de baldes quando a carga passa de 75%. A busca de paciente usada nas ações passa por essa tabela.
+### 3.2 Min-Heap binário — duas filas de prioridade (`lib/estruturas/heapBinario.js`)
+
+- Vetor representando uma árvore binária quase completa. Os filhos de `i` ficam em `2i+1` e `2i+2`.
+- **Índice de posições** `id → posição`, feito com a Tabela Hash do próprio projeto. Com ele, `removerPorId` e `atualizar` (alterar prioridade) rodam em **O(log n)**, sem varrer o vetor.
+- **Heap de pacientes:** chave `(risco, chegada, ID)`, onde 1 é a maior urgência. A raiz é o próximo a ser chamado. A reclassificação altera o risco e reposiciona o elemento, subindo ou descendo, sem duplicar.
+- **Heap de médicos:** contém só os médicos disponíveis, com chave `(concluídos, última atribuição, ID)`. Na chamada sai a raiz. Na conclusão, o médico volta ao heap com o contador +1. No cancelamento, volta sem somar.
+- `validar()` confere a propriedade do heap (pai ≤ filhos) e o índice de posições.
+
+### 3.3 Tabela Hash — consultas rápidas (`lib/estruturas/tabelaHash.js`)
+
+- **Função de dispersão:** método da divisão, `h(ID) = ID % capacidade`.
+- **Colisões:** encadeamento separado (uma lista por bucket).
+- **Redimensionamento:** a capacidade começa em 11, um número primo. Quando a carga passa de 75%, a tabela vai para `2m + 1` (11 → 23 → 47) e todos os itens são reespalhados.
+- **Consulta, remoção e `validar()`.** `validar()` confere se cada item está no bucket certo, se não há chaves repetidas e se o tamanho está correto.
+- **Uso:**
+  - `hashEspera`: pacientes aguardando. Mantém o mesmo conjunto de IDs da Rubro-Negra e do heap.
+  - `hashAtendimentos` e `hashHistorico`: pacientes em atendimento e encerrados. A consulta por ID percorre as três, sem varrer listas.
+  - `hashMedicos`: a hash adicional recomendada pelo enunciado.
+  - Índice de posições dos heaps.
+- **Demonstração de colisão:** o cenário "Cenário de colisões" cria os pacientes 1000, 1011, 1022, 1033 e 1044, que caem todos no bucket 10 (`ID % 11`). Basta cadastrar mais pacientes até passar de 75% para ver o redimensionamento 11 → 23.
+
+### 3.4 Complexidade
+
+| Operação | Estrutura | Custo |
+|---|---|---|
+| Cadastrar paciente | Hash + Rubro-Negra + Heap | O(1) médio + O(log n) + O(log n) |
+| Chamar próximo | Heap (extrair mínimo) + Rubro-Negra (remover) + Hash (remover) + Heap de médicos | O(log n) + O(log m) |
+| Reclassificar | Hash (localizar) + Heap (alterar prioridade) | O(1) médio + O(log n) |
+| Concluir / cancelar | Hash + Heap de médicos | O(1) médio + O(log m) |
+| Consultar por ID | Hash | O(1) médio |
+| Listar por chegada | Rubro-Negra (em ordem) | O(n) |
+
+### 3.5 Mecanismos auxiliares (justificativa)
+
+O enunciado permite mecanismos auxiliares desde que justificados. Nenhum deles substitui as três estruturas:
+
+- **Vetores (Array) do JavaScript:** usados como memória contígua do heap e como lista de cada bucket da hash, papel equivalente ao das listas do `hash.py` da aula. Não usamos `Map`, `Set` nem bibliotecas de árvore ou heap.
+- **Ordenações com `sort`:** só para apresentar listas na tela (histórico, tabelas) e para comparar conjuntos de IDs no `validar()`. A ordem de chamada e a ordem cronológica vêm do heap e da Rubro-Negra.
+- **PostgreSQL:** guarda os dados entre requisições. A escolha do paciente e do médico é feita pelos heaps, não por `ORDER BY`.
 
 ## 4. Regras de negócio
 
-A prioridade clínica prevalece sobre a ordem de chegada. Em caso de empate de risco, atende primeiro quem chegou antes e, persistindo o empate, o de menor ID.
+- **Prioridade:** a prioridade clínica prevalece sobre a ordem de chegada. Empate: atende quem chegou antes. Persistindo o empate, o menor ID.
+- **Escolha do médico:** um médico disponível com o **menor número de atendimentos concluídos**. Empate: o que está há mais tempo sem **receber** paciente (campo `ultima_atribuicao`, gravado na chamada). Persistindo o empate, o menor ID.
+- **Ordem da decisão:** a distribuição de médicos nunca se sobrepõe à prioridade clínica. O paciente é escolhido primeiro e o médico depois.
+- **Após a chamada:** o médico fica *Em atendimento* e sai do heap, então não pode ser escolhido de novo.
+- **Conclusão:** soma 1 ao contador, torna o médico disponível e o reinsere no heap.
+- **Cancelamento:**
+  - de cadastro: o paciente sai das três estruturas;
+  - de atendimento: o médico é liberado **sem** somar concluído.
+- **Sem médico disponível:** a chamada não altera nada. O paciente permanece na fila, sem perda nem duplicação.
+- **Reclassificação:** só para pacientes aguardando.
+- **Validação dos índices** (botão *Validar índices* e após cada operação):
+  - mesmo conjunto de IDs aguardando na hash, na Rubro-Negra e no heap;
+  - nenhum paciente em atendimento ou encerrado nos índices de espera;
+  - todo médico ocupado com exatamente um paciente e todo disponível com nenhum;
+  - heap de médicos igual ao conjunto de médicos disponíveis.
 
-Na chamada, o sistema escolhe um médico disponível com o menor número de atendimentos concluídos. Havendo empate, escolhe o que está há mais tempo sem paciente e, depois, o de menor ID.
+## 5. Interface
 
-Ao chamar um paciente, o médico passa a "Em atendimento" e não pode ser escolhido de novo até a conclusão ou o cancelamento. A conclusão soma um ao contador do médico e o libera. O cancelamento libera o médico sem somar atendimento. Se não houver médico disponível, o paciente permanece na fila, sem perda nem duplicação de registros. Os updates são condicionais, o que evita chamadas duplicadas em requisições concorrentes.
+Sete telas, com navegação lateral e endereço próprio para cada uma (`#triagem`, `#estruturas`...): **Painel geral**, **Pacientes**, **Triagem/Fila**, **Médicos**, **Atendimentos**, **Histórico** e **Estruturas**.
 
-## 5. Testes
+- **Pacientes:** cadastro com hora de chegada e busca por ID pela hash.
+- **Triagem/Fila:** fila na ordem do heap, com reclassificação e cancelamento.
+- **Médicos:** cadastro, consulta e contadores.
+- **Atendimentos:** paciente e médico vinculados, status e início.
+- **Histórico:** atendimentos por médico, pacientes por estado e lista cronológica de chegadas.
+- **Estruturas:** desenho da Rubro-Negra e dos dois heaps, buckets das hashes, validação e cenários de demonstração.
 
-O arquivo `tests/sigae.test.mjs` cobre as três estruturas e as regras de negócio, com 16 testes executados por `npm test`, todos aprovados.
+Cada operação mostra o registro de eventos das estruturas. Clicar em um paciente (inclusive nos nós das árvores) abre os detalhes dele.
 
-Para a Rubro-Negra, os testes verificam as propriedades após inserções e remoções em massa: raiz preta, ausência de vermelho com filho vermelho, mesma altura negra em todos os caminhos, ponteiros pai consistentes e ordem correta. Também verificam que a altura cresce de forma logarítmica.
+## 6. Testes
 
-Para os heaps, verificam a ordem de extração e a remoção por predicado. Para a hash, verificam colisões, encadeamento e redimensionamento. Para as regras, verificam a prioridade clínica, os critérios de desempate e a distribuição equilibrada entre três médicos.
+São 31 testes automatizados em `tests/`, rodados com `npm test` (módulo nativo `node:test`, sem banco). A saída está em `docs/evidencias-testes.txt`.
 
-## 6. Demonstração
-
-A versão em produção está em https://sigae-web.vercel.app. Na tela, a árvore Rubro-Negra é desenhada com as cores dos nós e a altura, a tabela hash mostra capacidade, itens e colisões, e a fila de espera segue a ordem de prioridade do heap. Os indicadores exibem pacientes por situação e atendimentos concluídos por médico.
+- **Estruturas (18):**
+  - Rubro-Negra: propriedades após inserções e remoções em massa, altura logarítmica, casos de rotação, detecção de árvore corrompida.
+  - Heap: extração, `removerPorId` e alteração de prioridade com índice de posições.
+  - Hash: colisão de IDs 1 e 12 com `% 11` e redimensionamento 11 → 23.
+- **Cenários da seção 7 do enunciado (13):**
+  - três médicos A, B e C com distribuição equilibrada;
+  - escolha do médico com menos concluídos;
+  - empate e desempates;
+  - médico ocupado e ausência de médico disponível;
+  - ordem de chamada pelo heap;
+  - prioridade clínica acima da distribuição;
+  - reclassificação sem duplicar;
+  - cancelamentos sem somar e sem registros órfãos;
+  - colisões e redimensionamento no fluxo;
+  - 300 operações aleatórias com `validar()` verdadeiro a cada passo.
 
 ## 7. Limitações
 
-A árvore e os heaps são reconstruídos a cada requisição e não são persistidos. Uma evolução seria manter o estado em memória ou em tabelas dedicadas, o que exigiria controle de concorrência. O sistema não tem autenticação, pois é um simulador de uso acadêmico.
-
-O Next.js 14.2.15 tem aviso de segurança publicado pelo fornecedor. A atualização para uma versão 14.2.x mais recente é o próximo passo recomendado.
+- As estruturas são reconstruídas a cada requisição, como explicado na seção 2. Com o volume de uma simulação acadêmica, o custo de reconstrução é desprezível.
+- Não há autenticação, por ser um simulador acadêmico.
+- Os botões de cenário apagam os dados da simulação e pedem confirmação antes.
 
 ## 8. Como executar
 
-Instale as dependências com `npm install`. Crie o banco no Neon e execute `db/schema.sql`. Para rodar localmente, copie `.env.example` para `.env.local`, preencha `DATABASE_URL` e use `npm run dev`. Para executar os testes, use `npm test`.
+Ver `README.md`.
